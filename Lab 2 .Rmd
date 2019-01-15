@@ -5,26 +5,182 @@ date: "1/14/2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# 1. Write the code to load the data in directly from the web, using the link above.
+
+```{r import, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(rio)
+library(dplyr)
+
+d <- import("https://github.com/fivethirtyeight/data/raw/master/alcohol-consumption/drinks.csv")
+
+colnames(d)[5] <- "liters"
+
+d <- d %>% 
+  mutate(total = beer_servings + spirit_servings + wine_servings)
 ```
 
-## R Markdown
+It's so cool that `rio` can import data with just a simple link. A very impressive package! Another quick note about the above code chunk is that I created a new variable — total — to express the total amount of servings of alcohol consumed in each country. I did this by adding the servings of beer, spirits, and wine together.
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# 2. Explore the overall distribution of total alcohol consumed.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+## Histogram.
 
-```{r cars}
-summary(cars)
+### Play with the number of bins. Settle on a number of bins and provide a brief justification in text.
+
+Looks like we'll be examining the distribution of the total servings of alcohol consumed across all countries included in the sample. To begin, let's plot this overall distribution with the default number of bins (i.e., 30). This should give us some idea of how many bins to use.
+
+```{r histogram}
+library(ggplot2)
+
+ggplot(d, aes(total)) +
+  geom_histogram(color = "white", fill = "cornflowerblue") +
+  theme_minimal() +
+  labs(x = "Total Alcohol Consumed (Servings)", y = "Count") +
+  ggtitle("Overall Distribution of Total Alcohol Consumed")
 ```
 
-## Including Plots
+Hmm, looks like the data are positively skewed, such that a majority of the countries in the sample consume less alcohol than more. In fact, it looks like zero servings of alcohol consumed is the mode in the distribution. A quick count through the dataset revealed this to be true, as 13 of the 193 countries consumed zero liters of alcohol.
 
-You can also embed plots, for example:
+Now, as we think more about the number of bins, it becomes important to consider the best way to represent the data. Honestly, 30 bins is a good visual. It reveals a roughly tri-modal distribution that makes sense to the eye, i.e., is not so overwhelming as to be incomprehensible. Fewer bins could compromise the richness of information shown. But just to be sure, let's go for a smaller number of bins. We'll divide the number of bins in half.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r histogram_small_bin}
+library(ggplot2)
+
+ggplot(d, aes(total)) +
+  geom_histogram(color = "white", fill = "cornflowerblue", bins = 15) +
+  theme_minimal() +
+  labs(x = "Total Alcohol Consumed (Servings)", y = "Count") +
+  ggtitle("Overall Distribution of Total Alcohol Consumed")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+It is my "professional" opinion that 15 bins is optimal here. It consoldates information depicted, but does not compromise its richness. There is still a roughly trimodal distribution here for all to see.
+
+## Density plot.
+
+### Compare the default bandwidth with a few other selections entered manually. Settle on a bandwidth selection, and justify why briefly in text.
+
+Time for density plots! We can get a better sense of the overall shape of the distribution this way. We'll take a first stab at the plot with the default bandwidth.
+
+```{r density}
+ggplot(d, aes(total)) +
+  geom_density(color = "white", fill = "cornflowerblue") +
+  theme_minimal() +
+  labs(x = "Total Alcohol Consumed (Servings)", y = "Density") +
+  ggtitle("Overall Distribution of Total Alcohol Consumed")
+```
+
+Now, let's get down the business of bandwidth! The default bandwidth admittedly provides a pretty nice depiction of the distribution. We want the bandwidth to help approximate the underlying continuous probability function, while still keeping true to the original data.
+
+To be sure, though, let's try decreasing the bandwidth a bit, to conform even more to the original data. We'll set bandwidth to 10.
+
+```{r density_low_bw}
+ggplot(d, aes(total)) +
+  geom_density(color = "white", fill = "cornflowerblue", bw = 10) +
+  theme_minimal() +
+  labs(x = "Total Alcohol Consumed (Servings)", y = "Density") +
+  ggtitle("Overall Distribution of Total Alcohol Consumed")
+```
+
+Yikes. A little too jagged there. Perhaps a bigger bandwidth might work better.
+
+```{r density_good_bw}
+library(ggplot2)
+
+ggplot(d, aes(total)) +
+  geom_density(color = "white", fill = "cornflowerblue", bw = 40) +
+  theme_minimal() +
+  labs(x = "Total Alcohol Consumed (Servings)", y = "Density") +
+  ggtitle("Overall Distribution of Total Alcohol Consumed")
+```
+
+A bandwidth of 40 looks about right. A tighter fit to the original data than the default density plot, but still a smooth trimodal distribution overall. 
+
+# 3. Reorganize the data so you have a type and servings column.
+
+Let's get polish up those old tidyverse skills.
+
+```{r tidy}
+library(tidyverse)
+
+d_tidy <- d %>%
+  gather("type", "servings", -country, -total, -liters) %>% 
+  mutate(type = as.factor(type))
+
+levels(d_tidy$type) <- c("Beer", "Spirits", "Wine")
+```
+
+# 4. Evaluate the distribution of servings by type using at least three different methods. Provide a brief substantive conclusion.
+
+Now that we've successfully reorganized the data, let's take a look at the distribution of servings by type with a few different visualizations. We'll start with a bar graph 
+
+## Bar Graph
+
+```{r bar}
+ggplot(d_tidy, aes(type, servings)) +
+  geom_bar(fill = "cornflowerblue", color = "white", stat = "summary", alpha = 0.8) +
+  theme_minimal() +
+  labs(x = "Type of Alcohol", y = "Servings") +
+  ggtitle("Servings by Type of Alcohol (Averaged Across Countries)")
+```
+
+This provides some decent information. Notably, when aggregating across all countries represented in the sample, we can see that beer, with an average of 90 servings per country, is the most popular alcoholic beverage — at least versus spirits and wine. However, we can make our plot a bit more informative. We'll start by layering the raw data on top of the summary bars with a quick `geom_jitter`. 
+
+## Bar Graph + Jitter Plot
+
+```{r jitter}
+ggplot(d_tidy, aes(type, servings)) +
+  geom_bar(fill = "cornflowerblue", color = "white", stat = "summary", alpha = 0.8) +
+  geom_jitter(stat = "identity", width = 0.3) +
+  theme_minimal() +
+  labs(x = "Type of Alcohol", y = "Servings") +
+  ggtitle("Servings by Type of Alcohol (Averaged Across Countries)")
+```
+
+This is much more informative. Now, within each of the three alcoholic beverage types, we get a sense of their underlying distributions. There is a similar range in servings of each alcohol type consumed, but spirits and wine are more positively skewed than beer is. 
+
+But, hey, speaking of distributions, we can make our visualization a bit more explicit in that respect, huh? In fact, why use blocky bars to provide summary information when we can use violin plots instead?
+
+## Violin Plot + Jitter Plot
+
+```{r violin}
+ggplot(d_tidy, aes(type, servings)) +
+  geom_violin(fill = "cornflowerblue", color = "white", alpha = 0.8) +
+  geom_jitter(stat = "identity", width = 0.3) +
+  theme_minimal() +
+  labs(x = "Type of Alcohol", y = "Servings") +
+  ggtitle("Servings by Type of Alcohol (Averaged Across Countries)")
+```
+
+Here, we get a sense of just how positively skewed the distribution for wine is. Nearly all countries are clumped at < 50 servings. I'm not so much of a wine guy myself. Bring on the beer servings, please and thanks!
+
+# 5. Reproduce the plot.
+
+Can do! First, we'll have to subset the original dataset to the top 25 countries by alcohol consumption. We can do this with the `top_n` command. We'll simply tell R to return the top 25 countries in the "total" servings of alcohol variable we computed earlier. A nifty trick in just a single line of code!
+
+Then, we'll tidy up the new dataframe as we did before by creating an individual column for both alcohol type and number of servings. 
+
+```{r more_tidy}
+top <- top_n(d, 25, total)
+
+top <- top %>%
+  gather("type", "servings", -country, -total, -liters) %>% 
+  mutate(type = as.factor(type))
+
+levels(top$type) <- c("Beer", "Spirits", "Wine")
+```
+
+Finally, we'll reproduce that plot. Nothing a little `coord_flip` can't solve. There is one notable difference in my plot as compared to the sample, however. I reordered my countries in terms of their overall alcohol consumption by serving. For example, with 695 servings, Andorra is the #1 biggest alcohol consumer in the world, followed by Grenada with 665 servings. 
+
+```{r final_plot}
+ggplot(top, aes(reorder(country, servings), servings)) +
+  geom_bar(stat = "identity", fill = "cornflowerblue", alpha = 0.8) +
+  coord_flip() +
+  facet_wrap(~type) +
+  theme_minimal() +
+  labs(x = "Country", y = "Total # of Alcohol Servings") +
+  ggtitle("Countries with the Highest Alcohol Consumption", subtitle = "Top 25 countries displayed")
+```
+
+Also, wow: Counter to stereotypes, Ireland didn't even crack the top 10.
